@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass
-from Neuron import (
+from DQN_Code.Neuron import (
     Connections,
     NetLayer,
     Neuron
@@ -83,13 +83,4 @@ class Network:
         for i in range(self.output_num - 1):
             results.append(self.net_layers[-1].neuron_layer[i].out_value)
 
-        return results
-
-    def save_weights(self):
-        pass
-
-    def load_weights(self):
-        pass
-
-
-        
+        return results        
