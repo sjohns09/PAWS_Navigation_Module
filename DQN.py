@@ -3,9 +3,9 @@ import random
 import pickle
 from datetime import datetime as dt
 from copy import deepcopy
-from DQN_Code.Actions import Actions
-from DQN_Code.Network import Network
-from DQN_Code.Simulation import Simulation
+from PAWS_Bot_Navigation.Actions import Actions
+from PAWS_Bot_Navigation.Network import Network
+from PAWS_Bot_Navigation.Simulation import Simulation
 
 EPISODES = 500
 
@@ -19,8 +19,8 @@ class DQN:
 
             random.seed()
 
-            num_hidden_layers = 3
-            num_hidden_neuron = 8
+            num_hidden_layers = 5
+            num_hidden_neuron = 12
             
             self.training_net = Network(state_size, action_size, num_hidden_layers, num_hidden_neuron)
             self.target_net = self._copy_net(self.training_net) # Needs to be a deep copy of training_net not reference

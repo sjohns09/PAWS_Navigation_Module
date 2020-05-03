@@ -8,7 +8,7 @@ import struct
 import sys
 import os
 import ctypes as ct
-from DQN_Code.CoppeliaSimConst import *
+from PAWS_Bot_Navigation.CoppeliaSimConst import *
 
 #load library
 libsimx = None

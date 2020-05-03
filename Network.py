@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass
-from DQN_Code.Neuron import (
+from PAWS_Bot_Navigation.Neuron import (
     Connections,
     NetLayer,
     Neuron
