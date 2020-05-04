@@ -13,7 +13,9 @@ class DQN:
 
     def __init__(self, state_size: int, action_size: int, train_mode: bool):
         
+        sim_port = 19999
         self.sim = Simulation()
+        self.sim.connect(sim_port)
         
         if train_mode:
 
@@ -109,12 +111,14 @@ class DQN:
             # Initialize environment
             print(f"EPISODE: {e} Initialized")
             self.sim.reset()
-            sim_state = self.sim.get_state()
+            bot_start_position = self.sim.get_postion(self.sim.paws_bot)
 
             for time in range(self.time_limit):
                 # Get predicted action to advance the simulation
+                sim_state = self.sim.get_state(bot_start_position)
                 sim_action = self._get_predicted_action(sim_state)
                 sim_next_state, sim_reward, sim_done = sim.step(
+                    sim_state,                    
                     predicted_action
                 )
 

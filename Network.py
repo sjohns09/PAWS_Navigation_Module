@@ -29,7 +29,7 @@ class Network:
             else:
                 num_out_connections = 0
 
-            if layer_num != self.num_layers - 1 && layer_num != 0:
+            if layer_num != self.num_layers - 1 and layer_num != 0:
                 for i in range(self.hidden_num):
                     self.net_layers[layer_num].neuron_layer.append(Neuron(num_out_connections, i))
             elif layer_num == 0:
@@ -45,7 +45,7 @@ class Network:
         i = 0
         for input in inputs:
             self.net_layers[0].neuron_layer[i].out_value = input
-            i++
+            i += 1
 
         for layer_num in range(1, self.num_layers):
             pre_layer = self.net_layers[layer_num - 1]
