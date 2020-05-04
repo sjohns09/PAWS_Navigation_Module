@@ -1,9 +1,11 @@
 from PAWS_Bot_Navigation.DQN import DQN
 from PAWS_Bot_Navigation.Simulation import Simulation
-import time
 from PAWS_Bot_Navigation.Actions import Actions
+from PAWS_Bot_Navigation.DQN import DQN
+import time
 
 def main():
+    '''
     sim_port = 19999
     sim = Simulation()
     is_connected = sim.connect(sim_port)
@@ -18,6 +20,9 @@ def main():
             print(f"State {i} Human : {state_human}")
             sim.reset()
             time.sleep(4)
+    '''
+    dqn = DQN(5, 4, True)
+    dqn._save_network(dqn.training_net)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ class Network:
         self.hidden_num = num_hidden_neuron + 1
         
         self.error_rms: float = 0.0
-        self.net_layers: list # List of NetLayer
+        self.net_layers: list = [] # List of NetLayer
 
         num_out_connections = 0
         for layer_num in range(0, self.num_layers):

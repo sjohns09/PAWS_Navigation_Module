@@ -1,21 +1,21 @@
 import math
 import random
 import pickle
-from datetime import datetime as dt
+import os
+from datetime import datetime
 from copy import deepcopy
 from PAWS_Bot_Navigation.Actions import Actions
 from PAWS_Bot_Navigation.Network import Network
 from PAWS_Bot_Navigation.Simulation import Simulation
+from PAWS_Bot_Navigation.config import EPISODES, SIM_PORT
 
-EPISODES = 500
 
 class DQN:
 
     def __init__(self, state_size: int, action_size: int, train_mode: bool):
         
-        sim_port = 19999
         self.sim = Simulation()
-        self.sim.connect(sim_port)
+        self.sim.connect(SIM_PORT)
         
         if train_mode:
 
@@ -89,7 +89,13 @@ class DQN:
         return deepcopy(net_to_copy)
 
     def _save_network(self, net_to_save: Network):
-        filepath = f"saved_networks/net.{dt.today()}.pickle"
+        now = datetime.now()
+        now_str = now.strftime("%Y%m%d_%H%M%S")
+        this_folder = os.path.dirname(os.path.abspath(__file__))
+        filepath = os.path.join(
+            this_folder, 
+            f"saved_networks/net_{now_str}.pickle"
+        )
         out_file = open(filepath, "wb")
         pickle.dump(net_to_save, out_file)
         out_file.close()
