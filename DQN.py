@@ -56,9 +56,12 @@ class DQN:
         max_q = max(target)
         return reward + self.learning_rate * max_q
 
-    def _get_target_output(self, state: list, next_state: list, reward: int):
+    def _get_target_output(self, state: list, next_state: list, reward: int, done: bool):
+        if done:
+            target_value = reward
+        else:
+            target_value = self._get_target_value(next_state, reward)
         target_outputs = self.target_net.feed_forward(state)
-        target_value = self._get_target_value(next_state, reward)
         target_outputs[predicted_action] = target_value
         return target_outputs
 
@@ -111,36 +114,36 @@ class DQN:
         return Actions[action_index]
 
     def train(self):
-        sim_done = False
+        done = False
 
         for e in range(EPISODES):
             # Initialize environment
             print(f"EPISODE: {e} Initialized")
-            self.sim.reset()
-            bot_start_position = self.sim.get_postion(self.sim.paws_bot)
+            self.sim.initialize()
+            bot_init_position = self.sim.get_postion(self.sim.paws_bot)
+            state = self.sim.get_state(bot_init_position)
 
             for time in range(self.time_limit):
                 # Get predicted action to advance the simulation
-                sim_state = self.sim.get_state(bot_start_position)
-                sim_action = self._get_predicted_action(sim_state)
-                sim_next_state, sim_reward, sim_done = sim.step(
-                    sim_state,                    
+                predicted_action = self._get_predicted_action(state)
+                next_state, reward, done = sim.step(
+                    state,                    
                     predicted_action
                 )
-
-                # Update state to next state
-                sim_state = sim_next_state
                 
                 # Save current state in replay memory
                 self._memorize(
-                    sim_state, 
-                    sim_action, 
-                    sim_reward, 
-                    sim_next_state, 
-                    sim_done
+                    state, 
+                    predicted_action, 
+                    reward, 
+                    next_state, 
+                    done
                 )
 
-                if sim_done:
+                # Update state to next state
+                state = next_state
+
+                if done:
                     print(f"SUCCESS! - EPISODE: {e}, TIME: {time}, REWARD: {sim.reward}")
                     break
 
@@ -157,7 +160,8 @@ class DQN:
                     target_outputs = self._get_target_output(
                         state, 
                         next_state,
-                        reward
+                        reward,
+                        done
                     )
                     
                     # Back propogate training net using target values
