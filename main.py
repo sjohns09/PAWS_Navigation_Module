@@ -11,12 +11,13 @@ def main():
     is_connected = sim.connect(sim_port)
     
     if is_connected:
-        sim.move(Actions.FORWARD)
-        sim.move(Actions.BACKWARD)
-        sim.move(Actions.LEFT)
-        sim.move(Actions.RIGHT)
+        for i in range(3):
+            sim.move(Actions.FORWARD)
+            sim.move(Actions.BACKWARD)
+            sim.move(Actions.LEFT)
+            sim.move(Actions.RIGHT)
     
-    
+    # Set a way to kill training and save off state of network before closing
 
 
 if __name__ == "__main__":

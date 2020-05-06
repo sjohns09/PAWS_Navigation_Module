@@ -1,16 +1,19 @@
 import time
 import random
 import math
-from scipy.spatial.transform import Rotation as rot
+from more_itertools import locate
+from scipy.spatial.transform import Rotation
 from scipy.spatial import distance as dist
 from PAWS_Bot_Navigation.Actions import Actions
 from PAWS_Bot_Navigation.CoppeliaSim import CoppeliaSim as sim
-from PAWS_Bot_Navigation.config import ( 
+from PAWS_Bot_Navigation.Config import ( 
     PAWS_BOT_MODEL_PATH,
     MAX_MOTOR_SPEED,
     MIN_MOTOR_SPEED,
     MAX_TURN_SPEED,
-    COLLISION_DIST
+    COLLISION_DIST,
+    TOLERANCE,
+    STEP_DISTANCE
 )
 
 class Simulation:
@@ -26,10 +29,8 @@ class Simulation:
         self.waypoint_array.extend(self.float_range(4, 5, 0.1)) 
         
         self.initial_pos = [0, 0]
-        self.tol = 0.01 # meters
         self.deg_180 = 180
         self.deg_90 = 90
-        self.step_distance = 0.5 # meters
 
     def float_range(self, x, y, step):
         range = list()
@@ -85,7 +86,7 @@ class Simulation:
             self.client_id, 
             "paws_westProxSensor", 
             sim.simx_opmode_blocking
-        )
+        )[1]
         self.paws_left_motor = sim.simxGetObjectHandle(
             self.client_id, 
             "paws_leftMotor", 
@@ -115,12 +116,11 @@ class Simulation:
         
     def step(self, old_state, action: Actions):
         done = false
-        self.move(self.paws_bot, action)
-        is_safe = self.is_safe()
+        is_safe = self.move(self.paws_bot, action)
         new_position = self.get_postion(self.paws_bot)
         new_state = self.get_state(new_position)
 
-        if self.get_length(new_state[4], new_state[5]) <= self.tol:
+        if self.get_length(new_state[4], new_state[5]) <= TOLERANCE:
             done = true
         
         reward = self._get_reward(old_state, new_state, is_safe, done)
@@ -146,47 +146,44 @@ class Simulation:
         return state
 
     def _get_sensor_readings(self):
-        north_detection = sim.simxReadProximitySensor(
-            self.client_id, 
-            self.paws_north_sensor, 
-            sim.simx_opmode_blocking
-        )[1]
-        south_detection = sim.simxReadProximitySensor(
-            self.client_id, 
-            self.paws_south_sensor, 
-            sim.simx_opmode_blocking
-        )[1]
-        east_detection = sim.simxReadProximitySensor(
-            self.client_id, 
-            self.paws_east_sensor, 
-            sim.simx_opmode_blocking
-        )[1]
-        west_detection = sim.simxReadProximitySensor(
-            self.client_id, 
-            self.paws_west_sensor, 
-            sim.simx_opmode_blocking
-        )[1]
-
-        return (north_detection, south_detection, east_detection, west_detection)
-
+        sensor_list = [
+            self.paws_north_sensor,
+            self.paws_south_sensor,
+            self.paws_east_sensor,
+            self.paws_west_sensor
+        ]
+        detection_list = []
+        for sensor in sensor_list:
+            detection_list.append(
+                sim.simxReadProximitySensor(
+                    self.client_id, 
+                    sensor, 
+                    sim.simx_opmode_blocking
+                    )[1]
+            )
+        
+        return detection_list
 
     def move(self, action: Actions):
         # Need to write move function
         # needs to return a collision indicator (success, fail)
         # Turn in direction given by action
-        
+        is_safe = True
+
         if action == Actions.FORWARD:
-            self._move_forward(self.step_distance)
+            is_safe = self._move_forward(STEP_DISTANCE)
         elif action == Actions.BACKWARD: 
             self._turn_left(self.deg_180), 
-            self._move_forward(self.step_distance)
+            is_safe = self._move_forward(STEP_DISTANCE)
         elif action == Actions.LEFT:
             self._turn_left(self.deg_90), 
-            self._move_forward(self.step_distance)
+            is_safe = self._move_forward(STEP_DISTANCE)
         elif action == Actions.RIGHT:
             self._turn_right(self.deg_90), 
-            self._move_forward(self.step_distance)
-    
+            is_safe = self._move_forward(STEP_DISTANCE)
+        
+        return is_safe
+        
     def _set_target_velocity(self, motor, speed):
         sim.simxSetJointTargetVelocity(
             self.client_id, 
@@ -196,30 +193,50 @@ class Simulation:
         )
 
     def _move_forward(self, target_dist):
+        is_safe = True
         start_position = self.get_postion(self.paws_bot, -1)
-        current_position = self.get_postion(self.paws_bot, -1)
+        current_position = start_position
         
         self._set_target_velocity(self.paws_right_motor, MAX_MOTOR_SPEED)
         self._set_target_velocity(self.paws_left_motor, MAX_MOTOR_SPEED)
         
-        collision = 0
-        while (dist.euclidean(current_position, start_position) < target_dist):
+        while (self.get_length(self.get_vector(start_position, current_position)) < target_dist):
             current_position = self.get_postion(self.paws_bot, -1)
-            
-            # Check if collision
-            north_det_dist = sim.simxReadProximitySensor(
-                self.client_id, 
-                self.paws_north_sensor, 
-                sim.simx_opmode_blocking
-            )[2]
-            obj_dist = dist.euclidean(north_det_dist, (0,0,0))
-            if obj_dist < COLLISION_DIST:
+            if self._detect_collision():
+                is_safe = False
                 break
 
         self._set_target_velocity(self.paws_right_motor, MIN_MOTOR_SPEED)
         self._set_target_velocity(self.paws_left_motor, MIN_MOTOR_SPEED)
-        
-    def _get_object_z_rot(self, object_id):
+
+        return is_safe
+
+    def _detect_collision(self):
+        collision = False
+        det_state = []
+        det_dist = []
+        sensor_list = [
+            self.paws_north_sensor,
+            self.paws_east_sensor,
+            self.paws_west_sensor
+        ]
+        for sensor in sensor_list:
+            det_reading = sim.simxReadProximitySensor(
+                    self.client_id, 
+                    sensor, 
+                    sim.simx_opmode_blocking
+                )
+            det_state.append(det_reading[1])
+            det_dist.append(det_reading[2])
+            
+        index = list(locate(det_state, lambda det: det == 1))
+        for i in index:
+            if self.get_length(det_dist[i]) <= COLLISION_DIST:
+                collision = True
+                break
+        return collision
+
+    def _get_object_rot(self, object_id):
         start_quaternion = sim.simxGetObjectQuaternion(
             self.client_id, 
             object_id, 
@@ -228,43 +245,54 @@ class Simulation:
         )[1]
         
         if all(q == 0 for q in start_quaternion):
-            z_rot = 0.0
+            rot_deg = 0.0
         else:
-            r = rot.from_quat(start_quaternion)
+            r = Rotation.from_quat(start_quaternion)
             rot_vec = r.as_euler('zyx', degrees=True)
-            print(rot_vec)
-        return rot_vec[2]
+            rot_deg = rot_vec[1]
+            is_increasing = rot_vec[0] >= 0
+
+        return rot_deg, is_increasing
 
     def _turn_left(self, turn_rad):
-        object_z_start = self._get_object_z_rot(self.paws_bot)
-        object_z = object_z_start
+        object_turn_cumulative = 0.0
+        turn_deg, is_increasing = self._get_object_rot(self.paws_bot)
 
         self._set_target_velocity(self.paws_right_motor, MAX_TURN_SPEED)
         self._set_target_velocity(self.paws_left_motor, -MAX_TURN_SPEED)
         
-        while (abs(object_z_start - object_z) < turn_rad):
-            object_z = self._get_object_z_rot(self.paws_bot)
-        
+        self._turn_control(turn_rad, turn_deg, is_increasing)
+
         self._set_target_velocity(self.paws_right_motor, MIN_MOTOR_SPEED)
         self._set_target_velocity(self.paws_left_motor, MIN_MOTOR_SPEED)
 
     def _turn_right(self, turn_rad):
-        object_z_start = self._get_object_z_rot(self.paws_bot)
-        object_z = object_z_start
+        
+        turn_deg, is_increasing = self._get_object_rot(self.paws_bot)
 
         self._set_target_velocity(self.paws_left_motor, MAX_TURN_SPEED)
         self._set_target_velocity(self.paws_right_motor, -MAX_TURN_SPEED)
 
-        while (abs(object_z_start - object_z) < turn_rad):
-            object_z = self._get_object_z_rot(self.paws_bot)
+        self._turn_control(turn_rad, turn_deg, is_increasing)
         
         self._set_target_velocity(self.paws_left_motor, MIN_MOTOR_SPEED)
         self._set_target_velocity(self.paws_right_motor, MIN_MOTOR_SPEED)
 
-    def is_safe(self):
-        # Determine if collided with object by checking sensors
-        # might need distance returned after all
-        return True
+    def _turn_control(self, turn_rad, initial_turn_deg, initial_is_increasing):
+        object_turn_cumulative = 0.0
+
+        while (object_turn_cumulative < turn_rad):
+            step_turn_deg, step_is_increasing = self._get_object_rot(self.paws_bot)
+            
+            if ((initial_is_increasing >= 0) == (step_is_increasing >= 0)):
+                object_turn_cumulative += abs(step_turn_deg - initial_turn_deg)
+            else:
+                turn_inc = abs(initial_turn_deg - 90)
+                step_turn_inc = abs(step_turn_deg - 90)
+                object_turn_cumulative += (turn_inc + step_turn_inc)
+
+            initial_turn_deg = step_turn_deg
+            initial_is_increasing = step_is_increasing
     
     def initialize(self):
         # Reset robot to start
