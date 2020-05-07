@@ -17,8 +17,8 @@ class Neuron:
     alpha: float = 0.5
 
     def __init__(self, num_out_connections:int, index:int):
-        self.out_value: float
-        self.gradient: float
+        self.out_value = 0.0
+        self.gradient = 0.0
         self.n_index = index
         self.out_weights: list = [] # List of Connections
 
@@ -55,7 +55,7 @@ class Neuron:
         for x in range(len(pre_layer.neuron_layer)):
             pre_neuron = pre_layer.neuron_layer[x]
             old_delta_weight = pre_neuron.out_weights[self.n_index].delta_weight
-            new_delta_weight = eta * pre_neuron.out_value * self.gradient + alpha * old_delta_weight
+            new_delta_weight = self.eta * pre_neuron.out_value * self.gradient + self.alpha * old_delta_weight
 
             pre_neuron.out_weights[self.n_index].delta_weight = new_delta_weight
             pre_neuron.out_weights[self.n_index].weight += new_delta_weight

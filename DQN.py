@@ -7,7 +7,7 @@ from copy import deepcopy
 from PAWS_Bot_Navigation.Actions import Actions
 from PAWS_Bot_Navigation.Network import Network
 from PAWS_Bot_Navigation.Simulation import Simulation
-from PAWS_Bot_Navigation.config import EPISODES, SIM_PORT
+from PAWS_Bot_Navigation.Config import EPISODES, SIM_PORT
 
 
 class DQN:
@@ -15,7 +15,9 @@ class DQN:
     def __init__(self, state_size: int, action_size: int, train_mode: bool):
         
         self.sim = Simulation()
-        self.sim.connect(SIM_PORT)
+        is_connected = self.sim.connect(SIM_PORT)
+        if not is_connected:
+            raise Exception("Not connected to remote API server")
         
         if train_mode:
 
@@ -27,16 +29,16 @@ class DQN:
             self.training_net = Network(state_size, action_size, num_hidden_layers, num_hidden_neuron)
             self.target_net = self._copy_net(self.training_net) # Needs to be a deep copy of training_net not reference
 
-            self.experience: dict # state, action, reward, next_state
-            self.memory: list
+            self.experience = {} # state, action, reward, next_state
+            self.memory = []
 
             self.memory_capacity = 1000
             self.discount_rate = 0.95
             self.epsilon = 1.0
-            self.epsilon_decy = 0.95
+            self.epsilon_decay = 0.995
             self.epsilon_min = 0.01
             self.learning_rate = 0.001
-            self.time_limit = 500
+            self.time_limit = 150
             self.batch_size = 10
         
 
@@ -44,33 +46,36 @@ class DQN:
         # Returns action to take based on max Q value returned 
         # from prediction net
         if random.random() <= self.epsilon:
-            return Actions[random.randint(0, len(Actions))]
-        output = self.training_net.feed_forward(state)
+            return Actions(random.randint(0, len(Actions)-1))
+        self.training_net.feed_forward(state)
+        output = self.training_net.get_output()
         action_index = output.index(max(output))
-        return Actions[action_index]
+        return Actions(action_index)
         
     def _get_target_value(self, next_state: list, reward: int):
         # Returns max Q value returned 
         # from target net
-        target = self.target_net.feed_forward(next_state)
+        self.target_net.feed_forward(next_state)
+        target = self.target_net.get_output()
         max_q = max(target)
         return reward + self.learning_rate * max_q
 
-    def _get_target_output(self, state: list, next_state: list, reward: int, done: bool):
+    def _get_target_output(self, state: list, predicted_action: Actions, next_state: list, reward: int, done: bool):
         if done:
             target_value = reward
         else:
             target_value = self._get_target_value(next_state, reward)
-        target_outputs = self.target_net.feed_forward(state)
-        target_outputs[predicted_action] = target_value
+        self.target_net.feed_forward(state)
+        target_outputs = self.target_net.get_output()
+        target_outputs[predicted_action.value] = target_value
         return target_outputs
 
-    def _memorize(self, state, action, reward, next_state, done):
+    def _memorize(self, state, action, next_state, reward, done):
         experience = {
             "state": state,
             "action": action,
-            "reward": reward,
             "next_state": next_state,
+            "reward": reward,
             "done": done        
         }
         if len(self.memory) < self.memory_capacity:
@@ -80,13 +85,15 @@ class DQN:
             self.memory.append(experience)
 
     def _get_memories(self):
-        if len(memory) == 0:
-            return {}
-        return random.choices(self.memory, k=self.batch_size)
+        if len(self.memory) < self.batch_size:
+            memories = {}
+        else: 
+            memories = random.choices(self.memory, k=self.batch_size)
+        return memories
 
     def _decay_epsilon(self):
         if self.epsilon >= self.epsilon_min:
-            self.epsilon *= self.epsilon_decy
+            self.epsilon *= self.epsilon_decay
 
     def _copy_net(self, net_to_copy):
         return deepcopy(net_to_copy)
@@ -109,9 +116,10 @@ class DQN:
     def get_action(self, state: list):
         # Returns action to take based on max Q value returned 
         # from prediction net
-        output = self.training_net.feed_forward(state)
+        self.training_net.feed_forward(state)
+        output = self.training_net.get_output()
         action_index = output.index(max(output))
-        return Actions[action_index]
+        return Actions(action_index)
 
     def train(self):
         done = False
@@ -126,17 +134,18 @@ class DQN:
             for time in range(self.time_limit):
                 # Get predicted action to advance the simulation
                 predicted_action = self._get_predicted_action(state)
-                next_state, reward, done = sim.step(
+                next_state, reward, done = self.sim.step(
                     state,                    
                     predicted_action
                 )
+                print(f"Reward: {reward}")
                 
                 # Save current state in replay memory
                 self._memorize(
                     state, 
-                    predicted_action, 
-                    reward, 
+                    predicted_action,  
                     next_state, 
+                    reward,
                     done
                 )
 
@@ -152,6 +161,7 @@ class DQN:
 
                 for mem in memories:
                     state = mem["state"]
+                    action = mem["action"]
                     next_state = mem["next_state"]
                     reward = mem["reward"]
                     done = mem["done"]
@@ -159,6 +169,7 @@ class DQN:
                     # Get target values
                     target_outputs = self._get_target_output(
                         state, 
+                        action,
                         next_state,
                         reward,
                         done
@@ -166,11 +177,11 @@ class DQN:
                     
                     # Back propogate training net using target values
                     self.training_net.back_prop(target_outputs)
+                    print(f"ERROR RMS: {self.training_net.error_rms}")
 
                 if time % 10 == 0:
-                    print(f"ERROR RMS: {self.training_net.error_rms}")
-                    
                     # Update target net to training net weights
+                    print("Updating target net")
                     self.target_net = self._copy_net(self.training_net)
 
                 # Reduce chance of exploration
@@ -178,3 +189,4 @@ class DQN:
 
         # Save the trained net to use later
         self._save_network(self.training_net)
+

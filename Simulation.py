@@ -25,8 +25,8 @@ class Simulation:
         self.floor_points = (-5, 5)
 
         # Possible Locations for Human
-        self.waypoint_array = self.float_range(-5, -4, 0.1)
-        self.waypoint_array.extend(self.float_range(4, 5, 0.1)) 
+        self.waypoint_array = self.float_range(-4.5, -3.5, 0.1)
+        self.waypoint_array.extend(self.float_range(3.5, 4.5, 0.1)) 
         
         self.initial_pos = [0, 0]
         self.deg_180 = 180
@@ -103,24 +103,24 @@ class Simulation:
             sim.simx_opmode_blocking
         )[1]
         
-    def set_optimal_distance(self, inital_pos, final_pos):
+    def set_optimal_distance(self, initial_pos, final_pos):
         vector = self.get_vector(initial_pos, final_pos)
         self.optimal_distance = self.get_length(vector)
 
     def get_length(self, vector):
-        return math.sqrt((vector[0])**2 + (vector[1])**2)
+        return math.sqrt(sum(v**2 for v in vector))
     
     def get_vector(self, coords_1, coords_2):
         # Assumes planar vector
         return [coords_2[0]-coords_1[0], coords_2[1]-coords_1[1]]
         
     def step(self, old_state, action: Actions):
-        done = false
-        is_safe = self.move(self.paws_bot, action)
+        done = False
+        is_safe = self.move(action)
         new_position = self.get_postion(self.paws_bot)
         new_state = self.get_state(new_position)
 
-        if self.get_length(new_state[4], new_state[5]) <= TOLERANCE:
+        if self.get_length([new_state[4], new_state[5]]) <= TOLERANCE:
             done = true
         
         reward = self._get_reward(old_state, new_state, is_safe, done)
@@ -200,10 +200,15 @@ class Simulation:
         self._set_target_velocity(self.paws_right_motor, MAX_MOTOR_SPEED)
         self._set_target_velocity(self.paws_left_motor, MAX_MOTOR_SPEED)
         
-        while (self.get_length(self.get_vector(start_position, current_position)) < target_dist):
+        condition = True
+        while (condition):
             current_position = self.get_postion(self.paws_bot, -1)
+            vector = self.get_vector(start_position, current_position)
+            dist = self.get_length(vector)
+            condition = dist < target_dist
             if self._detect_collision():
                 is_safe = False
+                print('COLLISION')
                 break
 
         self._set_target_velocity(self.paws_right_motor, MIN_MOTOR_SPEED)
@@ -229,9 +234,10 @@ class Simulation:
             det_state.append(det_reading[1])
             det_dist.append(det_reading[2])
             
-        index = list(locate(det_state, lambda det: det == 1))
+        index = list(locate(det_state, lambda det: det == True))
         for i in index:
-            if self.get_length(det_dist[i]) <= COLLISION_DIST:
+            dist = self.get_length(det_dist[i])
+            if dist <= COLLISION_DIST:
                 collision = True
                 break
         return collision
@@ -350,7 +356,7 @@ class Simulation:
             # Better reward for moving towards the objective
             old_dist = self.get_length([old_state[4], old_state[5]])
             current_dist = self.get_length([current_state[4], current_state[5]])
-            r_distance = current_dist-old_dist
+            r_distance = (old_dist-current_dist)*2.0
             # Better reward for finding optimal path
             r_optimal = math.exp(-current_dist/self.optimal_distance)
             # Total reward
