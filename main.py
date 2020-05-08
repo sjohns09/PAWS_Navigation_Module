@@ -1,30 +1,28 @@
 from PAWS_Bot_Navigation.DQN import DQN
 from PAWS_Bot_Navigation.Simulation import Simulation
 from PAWS_Bot_Navigation.Actions import Actions
-from PAWS_Bot_Navigation.DQN import DQN
 from PAWS_Bot_Navigation.Config import (
     STATE_SIZE,
     ACTION_SIZE
 )
 import time
 
-def main():
+def main(train_mode: bool, model_filepath: str = ""):
+
+    if train_mode:
+        dqn = DQN(STATE_SIZE, ACTION_SIZE, train_mode)
+        dqn.train()
+    else:
+        dqn = DQN(STATE_SIZE, ACTION_SIZE, train_mode, model_filepath=model_filepath)
     
-    dqn = DQN(STATE_SIZE, ACTION_SIZE, True)
-    dqn.train()
-    '''
-    initial = [0,0,0,0,sim.human_coords[0], sim.human_coords[1]]
-    new_state, reward, done = sim.step(initial, Actions.FORWARD)
-    print(f"{new_state}, {reward}, {done}")
-    new_state, reward, done = sim.step(new_state, Actions.BACKWARD)
-    print(f"{new_state}, {reward}, {done}")
-    new_state, reward, done = sim.step(new_state, Actions.LEFT)
-    print(f"{new_state}, {reward}, {done}")
-    new_state, reward, done = sim.step(new_state, Actions.RIGHT)
-    print(f"{new_state}, {reward}, {done}")
-    '''
     # Set a way to kill training and save off state of network before closing
 
 
 if __name__ == "__main__":
-    main()
+    input_mode = input("Training Mode? [Y\N] :")
+    if input_mode.upper() == 'Y':
+        train_mode = True
+    else:
+        train_mode = False
+        input_file = input("Network Filepath To Load :")
+    main(mode, input_file)

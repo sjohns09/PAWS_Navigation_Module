@@ -1,6 +1,7 @@
 import time
 import random
 import math
+import numpy as np
 from more_itertools import locate
 from scipy.spatial.transform import Rotation
 from scipy.spatial import distance as dist
@@ -13,7 +14,10 @@ from PAWS_Bot_Navigation.Config import (
     MAX_TURN_SPEED,
     COLLISION_DIST,
     TOLERANCE,
-    STEP_DISTANCE
+    STEP_DISTANCE,
+    GOAL_REWARD,
+    NOT_SAFE_REWARD,
+    REWARD_DISTANCE_WEIGHT
 )
 
 class Simulation:
@@ -22,23 +26,14 @@ class Simulation:
         random.seed()
 
         # Set Floor Size min max (square)
-        self.floor_points = (-5, 5)
+        # self.floor_points = (-5, 5)
 
         # Possible Locations for Human
-        self.waypoint_array = self.float_range(-4.5, -3.5, 0.1)
-        self.waypoint_array.extend(self.float_range(3.5, 4.5, 0.1)) 
+        array = np.linspace(-4.5, -3.5, num=50)
+        self.waypoint_array = np.concatenate((array, np.linspace(3.5, 4.5, num=50))) 
         
-        self.initial_pos = [0, 0]
-        self.deg_180 = 180
+        self.initial_pos = np.array([0, 0, 0])
         self.deg_90 = 90
-
-    def float_range(self, x, y, step):
-        range = list()
-        while x <= y:
-            range.append(x)
-            x += step
-            x = round(x, 2)
-        return range
 
     def connect(self, sim_port: int):
         # Code required to connect to the Coppelia Remote API
@@ -108,20 +103,30 @@ class Simulation:
         self.optimal_distance = self.get_length(vector)
 
     def get_length(self, vector):
-        return math.sqrt(sum(v**2 for v in vector))
+        return float(np.linalg.norm(vector))
     
     def get_vector(self, coords_1, coords_2):
         # Assumes planar vector
-        return [coords_2[0]-coords_1[0], coords_2[1]-coords_1[1]]
+        x = coords_2[0]-coords_1[0]
+        y = coords_2[1]-coords_1[1]
+        return np.array([x, y])
         
     def step(self, old_state, action: Actions):
         done = False
         is_safe = self.move(action)
         new_position = self.get_postion(self.paws_bot)
+        
+        # If it goes off the map, end the Episode
+        if any(list(map(lambda coord: abs(coord) > 5, new_position))):
+            new_state = []
+            reward = -5.0
+            done = True
+            return new_state, reward, done
+        
         new_state = self.get_state(new_position)
 
         if self.get_length([new_state[4], new_state[5]]) <= TOLERANCE:
-            done = true
+            done = True
         
         reward = self._get_reward(old_state, new_state, is_safe, done)
 
@@ -129,21 +134,21 @@ class Simulation:
 
     def get_postion(self, object_handle: int, relative_to: int = -1):
         # relative_to = -1 is the absolute position
-        return sim.simxGetObjectPosition(
+        pos = sim.simxGetObjectPosition(
             self.client_id,
             object_handle,
             relative_to,
             sim.simx_opmode_blocking
         )[1]
+        return np.array(pos)
 
     def get_state(self, bot_position):
         # Needs to return free or occupied for N S E W
         # and vector between bot and human
-        n_ps, s_ps, e_ps, w_ps = self._get_sensor_readings()
-        state = list(map(lambda x: int(x == True), [n_ps, s_ps, e_ps, w_ps]))
+        sensor_raw = self._get_sensor_readings()
+        sensor_bools = np.fromiter(map(lambda x: int(x == True), sensor_raw), bool)
         vector = self.get_vector(bot_position, self.human_coords)
-        state.extend(vector)
-        return state
+        return np.concatenate((sensor_bools, vector))
 
     def _get_sensor_readings(self):
         sensor_list = [
@@ -173,13 +178,12 @@ class Simulation:
         if action == Actions.FORWARD:
             is_safe = self._move_forward(STEP_DISTANCE)
         elif action == Actions.BACKWARD: 
-            self._turn_left(self.deg_180), 
-            is_safe = self._move_forward(STEP_DISTANCE)
+            is_safe = self._move_forward(STEP_DISTANCE, True)
         elif action == Actions.LEFT:
-            self._turn_left(self.deg_90), 
+            self._turn_left(self.deg_90)
             is_safe = self._move_forward(STEP_DISTANCE)
         elif action == Actions.RIGHT:
-            self._turn_right(self.deg_90), 
+            self._turn_right(self.deg_90)
             is_safe = self._move_forward(STEP_DISTANCE)
         
         return is_safe
@@ -192,13 +196,16 @@ class Simulation:
             sim.simx_opmode_streaming
         )
 
-    def _move_forward(self, target_dist):
+    def _move_forward(self, target_dist, reverse=False):
         is_safe = True
         start_position = self.get_postion(self.paws_bot, -1)
         current_position = start_position
         
-        self._set_target_velocity(self.paws_right_motor, MAX_MOTOR_SPEED)
-        self._set_target_velocity(self.paws_left_motor, MAX_MOTOR_SPEED)
+        max_speed = MAX_MOTOR_SPEED
+        if reverse == True:
+            max_speed = -MAX_MOTOR_SPEED
+        self._set_target_velocity(self.paws_right_motor, max_speed)
+        self._set_target_velocity(self.paws_left_motor, max_speed)
         
         condition = True
         while (condition):
@@ -319,7 +326,7 @@ class Simulation:
 
         # Set random waypoint location for human on edge of map
         self.human_coords = self._get_random_location(self.waypoint_array)
-        err = sim.simxSetObjectPosition(
+        sim.simxSetObjectPosition(
             self.client_id, 
             self.human, 
             absolute_ref, 
@@ -341,26 +348,26 @@ class Simulation:
         i_x = random.randint(0, len(array_of_points)-1)
         i_y = random.randint(0, len(array_of_points)-1)
         z = 0 # Planar 
-        return (array_of_points[i_x], array_of_points[i_y], z)
+        return [array_of_points[i_x], array_of_points[i_y], z]
 
     def _get_reward(self, old_state, current_state, is_safe: bool, done: bool):
         # Return the reward based on the reward policy
         # If done return goal reward
         # If move into obstacle (collision) return bad reward
-        reward = 0
+        reward = 0.0
         if done:
-            reward = 10 # goal reward
+            reward = GOAL_REWARD # goal reward
         elif not is_safe:
-            reward = -5 # obstacle negative reward
+            reward = NOT_SAFE_REWARD # obstacle negative reward
         else:
             # Better reward for moving towards the objective
             old_dist = self.get_length([old_state[4], old_state[5]])
             current_dist = self.get_length([current_state[4], current_state[5]])
-            r_distance = (old_dist-current_dist)*2.0
+            r_distance = (old_dist-current_dist)
             # Better reward for finding optimal path
-            r_optimal = math.exp(-current_dist/self.optimal_distance)
+            #r_optimal = math.exp(-current_dist/self.optimal_distance)
             # Total reward
-            reward = 1 + r_distance + r_optimal
+            reward = 1 + REWARD_DISTANCE_WEIGHT*r_distance
         return reward
 
             

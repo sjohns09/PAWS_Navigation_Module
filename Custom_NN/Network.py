@@ -54,15 +54,15 @@ class Network:
 
 
     def back_prop(self, targets: list): # target values should be determined from target Q network
-        print("back prop")
         output_layer = self.net_layers[-1]
         self.error_rms = 0.0
 
         # Get RMS error
+        sum_d = 0.0
         for n in range(self.output_num - 1):
             delta = targets[n] - output_layer.neuron_layer[n].out_value
-            self.error_rms += math.pow(delta, 2)
-        self.error_rms = math.sqrt((1 / (self.output_num - 1)) * self.error_rms)
+            sum_d += math.pow(delta, 2)
+        self.error_rms = math.sqrt(sum_d/self.output_num)
         
         # Get output layer gradients
         for n in range(self.output_num - 1):
