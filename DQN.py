@@ -21,7 +21,10 @@ from PAWS_Bot_Navigation.Config import (
     EPSILON,
     EPSILON_DECAY,
     EPSILON_MIN,
-    BATCH_SIZE
+    BATCH_SIZE,
+    PLOT_SAVE_FOLDER,
+    TARGET_UPDATE_COUNT,
+    NETWORK_SAVE_FOLDER
 )
 
 
@@ -32,6 +35,8 @@ class DQN:
         self.sim = Simulation()
         is_connected = self.sim.connect(SIM_PORT)
         
+        self.this_folder = os.path.dirname(os.path.abspath(__file__))
+
         if not is_connected:
             raise Exception("Not connected to remote API server")
         
@@ -48,7 +53,8 @@ class DQN:
 
         if train_mode:
             random.seed()
-            self.target_net = self._copy_net(self.training_net) # Needs to be a deep copy of training_net not reference
+            self.target_net = self._create_model() # Needs to be a deep copy of training_net not reference
+            self._update_target_weights()
             self.experience = {} # state, action, reward, next_state
             self.memory = []
         else:
@@ -114,23 +120,23 @@ class DQN:
         if self.epsilon >= self.epsilon_min:
             self.epsilon *= self.epsilon_decay      
 
-    def _copy_net(self, net_to_copy):
-        return deepcopy(net_to_copy)
+    def _update_target_weights(self):
+        self.target_net.set_weights(self.training_net.get_weights())
 
-    def _save_network(self, net_to_save):
+    def _save_network(self, net_to_save, ep_id):
         now = datetime.now()
         now_str = now.strftime("%Y%m%d_%H%M%S")
-        this_folder = os.path.dirname(os.path.abspath(__file__))
         filepath = os.path.join(
-            this_folder, 
-            f"saved_networks/net_{now_str}.h5"
+            self.this_folder, 
+            NETWORK_SAVE_FOLDER,
+            f"net_{now_str}_e{ep_id}.h5"
         )
         net_to_save.save_weights(filepath)
 
     def load_weights(self, net_weights_filepath: str):
         self.training_net.load_weights(net_weights_filepath)
         
-    def get_action(self, state):
+    def _get_action(self, state):
         # Returns action to take based on max Q value returned 
         # from prediction net
         output = self.training_net.predict(state.reshape(1,-1))[0]
@@ -139,7 +145,6 @@ class DQN:
     
     def _replay(self):
         # Use replay memory to train net
-        print("Replay Training...")
         memories = self._get_memories()
         
         avg_error_rms = 0.0
@@ -169,8 +174,6 @@ class DQN:
         
         if len(memories) > 0:
             avg_error_rms = math.sqrt(sum_d/float(len(memories)))
-        
-        print("Done")
 
         return avg_error_rms   
 
@@ -183,11 +186,12 @@ class DQN:
 
         for time in range(TIME_LIMIT):
                 # Get predicted action to advance the simulation
-                predicted_action = self._get_predicted_action(state)
+                action = self._get_action(state)
                 
                 next_state, _, done = self.sim.step(
                     state,                    
-                    predicted_action
+                    action,
+                    time
                 )
 
                 if time % 10 == 0:
@@ -208,19 +212,28 @@ class DQN:
 
     def train(self):
         done = False
+        update_target = 0
+
+        # Setup Episode Stats
+        now = datetime.now()
+        now_str = now.strftime("%Y%m%d_%H%M%S")
         steps_plot = Plot("Time vs Episode")
         reward_plot = Plot("Average Reward vs Episode")
 
         for e in range(EPISODES):
             # Initialize environment
             print(f"EPISODE: {e} Initialized")
+            self.sim.display_info(f"EPISODE: {e} Initialized")
+
+            # Setup Time Stats
             err_plot = Plot("Error vs Time")
+            dist_plot = Plot("Distance vs Time")
 
             self.sim.initialize()
             bot_init_position = self.sim.get_postion(self.sim.paws_bot)
             state = self.sim.get_state(bot_init_position)
             final_time = TIME_LIMIT
-            cumu_reward = 0.0
+            cumu_reward = []
 
             for time in range(TIME_LIMIT):
                 # Get predicted action to advance the simulation
@@ -228,10 +241,11 @@ class DQN:
                 
                 next_state, reward, done = self.sim.step(
                     state,                    
-                    predicted_action
+                    predicted_action,
+                    time
                 )
                 
-                cumu_reward += reward
+                cumu_reward.append(reward)
 
                 if len(next_state) > 0:
                     # Save current state in replay memory
@@ -243,9 +257,20 @@ class DQN:
                         done
                     )
 
+                # Determine when to update target net
+                update_target += 1
+                if update_target > TARGET_UPDATE_COUNT:
+                    print("Updating target weights")
+                    self._update_target_weights()
+                    update_target = 0
+
+                # Stat Tracking
+                dist = self.sim.get_length([next_state[4], next_state[5]])
+                print(f"TIME: {time}, REAWRD: {round(reward,4)}, DISTANCE FROM GOAL: {round(dist, 4)}")
+                dist_plot.add_point(time, dist)
+
                 if done:
                     # Update target net to training net weights
-                    self.target_net = self._copy_net(self.training_net)
                     final_time = time
                     if len(next_state) == 0:
                         print("AN ERROR OCURRED")
@@ -254,33 +279,35 @@ class DQN:
                     break
 
                 batch_error_rms = self._replay()
-                
-                # Update state to next state
-                state = next_state 
-
                 err_plot.add_point(time, batch_error_rms)
                 
-                if time % 10 == 0:
-                    dist = self.sim.get_length([next_state[4], next_state[5]])
-                    print(f"TIME: {time}, STEP_ERROR: {batch_error_rms}, DISTANCE FROM GOAL: {dist}")
-
                 # Reduce chance of exploration
                 self._decay_epsilon()
 
-            # Save plot at end of episode
-            steps_plot.add_point(e, final_time)
-            reward_plot.add_point(e, cumu_reward/final_time)
+                # Update state to next state
+                state = next_state 
 
-            now = datetime.now()
-            now_str = now.strftime("%Y%m%d_%H%M%S")
-            err_plot.plot(f"PAWS_Bot_Navigation/saved_data/plot_error_{e}_{now_str}")
+                
+                
+                # if time % 10 == 0:
+                    # print(f"TIME: {time}, STEP_ERROR: {batch_error_rms}, DISTANCE FROM GOAL: {dist}")
+
+            # Stat Tracking
+            steps_plot.add_point(e, final_time)
+            reward_plot.add_point(e, np.mean(cumu_reward))
+
+            # Save plots at end of episode
+            err_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_error_{e}_{now_str}"))
+            dist_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_dist_{e}_{now_str}"))
+
+            if e % 10 == 0:
+                # Save intermittent networks
+                self._save_network(self.training_net, e)
 
         # Save plots at end of training
-        now = datetime.now()
-        now_str = now.strftime("%Y%m%d_%H%M%S")
-        steps_plot.plot(f"PAWS_Bot_Navigation/saved_data/plot_steps_{e}_{now_str}")
-        reward_plot.plot(f"PAWS_Bot_Navigation/saved_data/plot_reward_{e}_{now_str}")
+        steps_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_steps_{e}_{now_str}"))
+        reward_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_reward_{e}_{now_str}"))
 
         # Save the trained net to use later
-        self._save_network(self.training_net)
+        self._save_network(self.training_net, EPISODES)
 

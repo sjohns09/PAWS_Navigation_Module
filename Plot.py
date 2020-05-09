@@ -16,9 +16,9 @@ class Plot:
         self.y_data.append(y_data_point)        
     
     def plot(self, filename):
-        print("making plot")
         self.fig = plt.figure()
         self.fig.suptitle(self.title)
         plt.plot(self.x_data, self.y_data)
         self.fig.savefig(filename)
+        plt.close(self.fig)
         

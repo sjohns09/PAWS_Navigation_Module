@@ -17,7 +17,9 @@ from PAWS_Bot_Navigation.Config import (
     STEP_DISTANCE,
     GOAL_REWARD,
     NOT_SAFE_REWARD,
-    REWARD_DISTANCE_WEIGHT
+    REWARD_DISTANCE_WEIGHT,
+    REWARD_CLOSE_WEIGHT,
+    REWARD_TIME_DECAY
 )
 
 class Simulation:
@@ -38,12 +40,11 @@ class Simulation:
     def connect(self, sim_port: int):
         # Code required to connect to the Coppelia Remote API
         print ('Simulation started')
+        self.sim_port = sim_port
         sim.simxFinish(-1) # close all opened connections
-        self.client_id = sim.simxStart('127.0.0.1', sim_port, True, True, 5000, 5) # Connect to CoppeliaSim
+        self.client_id = sim.simxStart('127.0.0.1', sim_port, True, False, 5000, 3) # Connect to CoppeliaSim
         if self.client_id!=-1:
-            sim.simxAddStatusbarMessage(
-                self.client_id, 'Hello! PAWS Connected.', sim.simx_opmode_oneshot
-            )
+            self.display_info('Hello! PAWS Connected.')
             print ('Connected to remote API server')
             is_connected = True
         else:
@@ -55,6 +56,11 @@ class Simulation:
             self._get_object_handles()
             
         return is_connected
+    
+    def display_info(self, info):
+        sim.simxAddStatusbarMessage(
+                self.client_id, info, sim.simx_opmode_oneshot
+            )
     
     def _get_object_handles(self):
         self.paws_bot = sim.simxGetObjectHandle(
@@ -111,7 +117,7 @@ class Simulation:
         y = coords_2[1]-coords_1[1]
         return np.array([x, y])
         
-    def step(self, old_state, action: Actions):
+    def step(self, old_state, action: Actions, time):
         done = False
         is_safe = self.move(action)
         new_position = self.get_postion(self.paws_bot)
@@ -128,7 +134,7 @@ class Simulation:
         if self.get_length([new_state[4], new_state[5]]) <= TOLERANCE:
             done = True
         
-        reward = self._get_reward(old_state, new_state, is_safe, done)
+        reward = self._get_reward(old_state, new_state, is_safe, done, time)
 
         return new_state, reward, done
 
@@ -178,7 +184,7 @@ class Simulation:
         if action == Actions.FORWARD:
             is_safe = self._move_forward(STEP_DISTANCE)
         elif action == Actions.BACKWARD: 
-            is_safe = self._move_forward(STEP_DISTANCE, True)
+            is_safe = self._move_forward(STEP_DISTANCE, reverse=True)
         elif action == Actions.LEFT:
             self._turn_left(self.deg_90)
             is_safe = self._move_forward(STEP_DISTANCE)
@@ -230,7 +236,8 @@ class Simulation:
         sensor_list = [
             self.paws_north_sensor,
             self.paws_east_sensor,
-            self.paws_west_sensor
+            self.paws_west_sensor,
+            self.paws_south_sensor
         ]
         for sensor in sensor_list:
             det_reading = sim.simxReadProximitySensor(
@@ -259,6 +266,7 @@ class Simulation:
         
         if all(q == 0 for q in start_quaternion):
             rot_deg = 0.0
+            is_increasing = 0
         else:
             r = Rotation.from_quat(start_quaternion)
             rot_vec = r.as_euler('zyx', degrees=True)
@@ -350,7 +358,7 @@ class Simulation:
         z = 0 # Planar 
         return [array_of_points[i_x], array_of_points[i_y], z]
 
-    def _get_reward(self, old_state, current_state, is_safe: bool, done: bool):
+    def _get_reward(self, old_state, current_state, is_safe: bool, done: bool, time):
         # Return the reward based on the reward policy
         # If done return goal reward
         # If move into obstacle (collision) return bad reward
@@ -360,14 +368,20 @@ class Simulation:
         elif not is_safe:
             reward = NOT_SAFE_REWARD # obstacle negative reward
         else:
-            # Better reward for moving towards the objective
+            # Positive reward for moving towards the objective
+            # Negative for moving away
             old_dist = self.get_length([old_state[4], old_state[5]])
             current_dist = self.get_length([current_state[4], current_state[5]])
-            r_distance = (old_dist-current_dist)
-            # Better reward for finding optimal path
-            #r_optimal = math.exp(-current_dist/self.optimal_distance)
+            r_distance = old_dist - current_dist
+            
+            # Higher reward for being near the objective
+            r_close = math.exp(-current_dist/self.optimal_distance)
+            
+            # Reward decays the longer time has passed
+            r_time = time * -REWARD_TIME_DECAY
+
             # Total reward
-            reward = 1 + REWARD_DISTANCE_WEIGHT*r_distance
+            reward = REWARD_DISTANCE_WEIGHT*r_distance + REWARD_CLOSE_WEIGHT*r_close + r_time
         return reward
 
             
