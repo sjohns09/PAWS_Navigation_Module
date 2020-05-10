@@ -21,7 +21,8 @@ from PAWS_Bot_Navigation.Config import (
     REWARD_DISTANCE_WEIGHT,
     REWARD_CLOSE_WEIGHT,
     REWARD_TIME_DECAY,
-    TIME_LIMIT
+    TIME_LIMIT,
+    REWARD_FREE_SPACE
 )
 
 class Simulation:
@@ -34,8 +35,8 @@ class Simulation:
         self.floor_points = (-5, 5)
 
         # Possible Locations for Human
-        array = np.linspace(-4.5, -3.5, num=50)
-        self.waypoint_array = np.concatenate((array, np.linspace(3.5, 4.5, num=50))) 
+        array = np.linspace(-4, -2.5, num=15)
+        self.waypoint_array = np.concatenate((array, np.linspace(2.5, 4, num=15))) 
         
         self.initial_pos = np.array([0, 0, 0])
         self.deg_90 = 90
@@ -377,7 +378,7 @@ class Simulation:
             r_distance = old_waypoint_dist - waypoint_dist
             
             # Higher reward for being near the objective
-            r_close = math.exp(-waypoint_dist/self.optimal_distance)
+            r_close = (self.optimal_distance-waypoint_dist)*REWARD_FREE_SPACE
             
             # Reward decays the longer time has passed
             r_time = (time/TIME_LIMIT) * REWARD_TIME_DECAY

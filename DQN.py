@@ -243,6 +243,7 @@ class DQN:
             self.sim.initialize()
             final_time = TIME_LIMIT
             cumu_reward = []
+            batch_error_rms = []
             reward = 0.0
 
             for time in range(TIME_LIMIT):
@@ -294,8 +295,8 @@ class DQN:
                         break
 
                     # Train NN
-                    batch_error_rms = self._replay()
-                    err_plot.add_point(time, batch_error_rms)
+                    batch_error_rms.append(self._replay())
+                    
 
                     # Update state to next state
                     state = next_state 
@@ -307,9 +308,9 @@ class DQN:
             # Stat Tracking
             steps_plot.add_point(e, final_time)
             reward_plot.add_point(e, np.mean(cumu_reward))
+            err_plot.add_point(e, np.mean(batch_error_rms))
 
             # Save plots at end of episode
-            err_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_error_{e}_{now_str}"))
             dist_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_dist_{e}_{now_str}"))
 
             if e % 10 == 0:
@@ -318,10 +319,12 @@ class DQN:
                 self._save_network(self.training_net, e)
                 steps_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_steps_{e}_{now_str}"))
                 reward_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_reward_{e}_{now_str}"))
+                err_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_error_{e}_{now_str}"))
 
         # Save plots at end of training
         steps_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_steps_{e}_{now_str}"))
         reward_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_reward_{e}_{now_str}"))
+        err_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_error_{e}_{now_str}"))
 
         # Save the trained net to use later
         self._save_network(self.training_net, EPISODES)

@@ -39,8 +39,8 @@ def main(train_mode: bool, model_name: str = ""):
 
 
 if __name__ == "__main__":
-    input_mode = input("Training Mode? [Y or N] :")
-    #input_mode = 'Y'
+    #input_mode = input("Training Mode? [Y or N] :")
+    input_mode = 'Y'
     if input_mode.upper() == 'Y':
         train_mode = True
         main(train_mode)
