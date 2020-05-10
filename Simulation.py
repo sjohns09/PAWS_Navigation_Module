@@ -2,6 +2,7 @@ import time
 import random
 import math
 import numpy as np
+import os
 from more_itertools import locate
 from scipy.spatial.transform import Rotation
 from scipy.spatial import distance as dist
@@ -19,16 +20,18 @@ from PAWS_Bot_Navigation.Config import (
     NOT_SAFE_REWARD,
     REWARD_DISTANCE_WEIGHT,
     REWARD_CLOSE_WEIGHT,
-    REWARD_TIME_DECAY
+    REWARD_TIME_DECAY,
+    TIME_LIMIT
 )
 
 class Simulation:
 
     def __init__(self):
         random.seed()
+        self.this_folder = os.path.dirname(os.path.abspath(__file__))
 
         # Set Floor Size min max (square)
-        # self.floor_points = (-5, 5)
+        self.floor_points = (-5, 5)
 
         # Possible Locations for Human
         array = np.linspace(-4.5, -3.5, num=50)
@@ -117,26 +120,25 @@ class Simulation:
         y = coords_2[1]-coords_1[1]
         return np.array([x, y])
         
-    def step(self, old_state, action: Actions, time):
+    def step(self, old_state, action: Actions, time, old_waypoint_dist):
         done = False
         is_safe = self.move(action)
         new_position = self.get_postion(self.paws_bot)
         
         # If it goes off the map, end the Episode
-        if any(list(map(lambda coord: abs(coord) > 5, new_position))):
+        if any(list(map(lambda coord: abs(coord) > self.floor_points[1], new_position))):
             new_state = []
-            reward = -5.0
-            done = True
+            reward = NOT_SAFE_REWARD
             return new_state, reward, done
         
-        new_state = self.get_state(new_position)
+        new_state, waypoint_dist = self.get_state(new_position, time)
 
-        if self.get_length([new_state[4], new_state[5]]) <= TOLERANCE:
+        if waypoint_dist <= TOLERANCE:
             done = True
         
-        reward = self._get_reward(old_state, new_state, is_safe, done, time)
+        reward = self._get_reward(old_waypoint_dist, waypoint_dist, is_safe, done, time)
 
-        return new_state, reward, done
+        return new_state, reward, done, waypoint_dist
 
     def get_postion(self, object_handle: int, relative_to: int = -1):
         # relative_to = -1 is the absolute position
@@ -148,13 +150,17 @@ class Simulation:
         )[1]
         return np.array(pos)
 
-    def get_state(self, bot_position):
-        # Needs to return free or occupied for N S E W
-        # and vector between bot and human
+    def get_state(self, bot_position, time):
+        # free or occupied for N S E W sensor readings
         sensor_raw = self._get_sensor_readings()
-        sensor_bools = np.fromiter(map(lambda x: int(x == True), sensor_raw), bool)
+        #sensor_bools = np.fromiter(map(lambda x: int(x == True), sensor_raw), bool)
+        # normalized vector between bot and human
         vector = self.get_vector(bot_position, self.human_coords)
-        return np.concatenate((sensor_bools, vector))
+        len_vector = self.get_length(vector) # Need for future calculations
+        norm_vector = vector/len_vector
+        # length of time spent in episode
+        norm_time = time/TIME_LIMIT
+        return np.concatenate((sensor_raw, norm_vector, [norm_time])), len_vector
 
     def _get_sensor_readings(self):
         sensor_list = [
@@ -318,7 +324,7 @@ class Simulation:
     def initialize(self):
         # Reset robot to start
         absolute_ref = -1
-        
+        model_path = os.path.join(self.this_folder, f"{PAWS_BOT_MODEL_PATH}")
         sim.simxRemoveModel(
             self.client_id, 
             self.paws_bot, 
@@ -326,7 +332,7 @@ class Simulation:
         )
         sim.simxLoadModel(
             self.client_id, 
-            PAWS_BOT_MODEL_PATH, 
+            model_path, 
             0, 
             sim.simx_opmode_blocking
         )
@@ -358,10 +364,8 @@ class Simulation:
         z = 0 # Planar 
         return [array_of_points[i_x], array_of_points[i_y], z]
 
-    def _get_reward(self, old_state, current_state, is_safe: bool, done: bool, time):
+    def _get_reward(self, old_waypoint_dist, waypoint_dist, is_safe: bool, done: bool, time):
         # Return the reward based on the reward policy
-        # If done return goal reward
-        # If move into obstacle (collision) return bad reward
         reward = 0.0
         if done:
             reward = GOAL_REWARD # goal reward
@@ -370,15 +374,13 @@ class Simulation:
         else:
             # Positive reward for moving towards the objective
             # Negative for moving away
-            old_dist = self.get_length([old_state[4], old_state[5]])
-            current_dist = self.get_length([current_state[4], current_state[5]])
-            r_distance = old_dist - current_dist
+            r_distance = old_waypoint_dist - waypoint_dist
             
             # Higher reward for being near the objective
-            r_close = math.exp(-current_dist/self.optimal_distance)
+            r_close = math.exp(-waypoint_dist/self.optimal_distance)
             
             # Reward decays the longer time has passed
-            r_time = time * -REWARD_TIME_DECAY
+            r_time = (time/TIME_LIMIT) * REWARD_TIME_DECAY
 
             # Total reward
             reward = REWARD_DISTANCE_WEIGHT*r_distance + REWARD_CLOSE_WEIGHT*r_close + r_time

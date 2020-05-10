@@ -1,6 +1,5 @@
 import math
 import random
-import pickle
 import os
 import numpy as np
 from datetime import datetime
@@ -138,9 +137,9 @@ class DQN:
         
     def _get_action(self, state):
         # Returns action to take based on max Q value returned 
-        # from prediction net
+        # from trained net
         output = self.training_net.predict(state.reshape(1,-1))[0]
-        action_index = output.index(max(output))
+        action_index = np.argmax(output)
         return Actions(action_index)
     
     def _replay(self):
@@ -177,37 +176,49 @@ class DQN:
 
         return avg_error_rms   
 
-    def test(self):
+    def test(self, now_str):
         self.sim.initialize()
-        
-        bot_init_position = self.sim.get_postion(self.sim.paws_bot)
-        state = self.sim.get_state(bot_init_position)
         final_time = TIME_LIMIT
+        success = False
+        dist_plot = Plot("Distance vs Time")
 
         for time in range(TIME_LIMIT):
+            if time == 0:
+                # Get stats for initial state
+                bot_init_position = self.sim.get_postion(self.sim.paws_bot)
+                state, waypoint_dist = self.sim.get_state(bot_init_position, time)
+            else:
                 # Get predicted action to advance the simulation
                 action = self._get_action(state)
                 
-                next_state, _, done = self.sim.step(
+                next_state, _, done, waypoint_dist = self.sim.step(
                     state,                    
                     action,
-                    time
+                    time,
+                    waypoint_dist
                 )
 
-                if time % 10 == 0:
-                    dist = self.sim.get_length([next_state[4], next_state[5]])
-                    print(f"TIME: {time}, DISTANCE FROM GOAL: {dist}")
+                if len(next_state) == 0:
+                    print("AN ERROR OCURRED")
+                    break
 
                 if done:                    
                     final_time = time
-                    if len(next_state) == 0:
-                        print("AN ERROR OCURRED")
-                    else:
-                        print(f"REACHED GOAL! TIME: {time}")
+                    print(f"REACHED GOAL! TIME: {time}")
+                    success = True
                     break
                 
                 # Update state to next state
                 state = next_state
+            
+            # Stat Tracking
+            print(f"TIME: {time}, DISTANCE FROM GOAL: {waypoint_dist}")
+            dist_plot.add_point(time, waypoint_dist)
+        
+        # Save plot at end of run
+        dist_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"TEST_plot_dist_{now_str}"))
+
+        return success
 
 
     def train(self):
@@ -230,24 +241,37 @@ class DQN:
             dist_plot = Plot("Distance vs Time")
 
             self.sim.initialize()
-            bot_init_position = self.sim.get_postion(self.sim.paws_bot)
-            state = self.sim.get_state(bot_init_position)
             final_time = TIME_LIMIT
             cumu_reward = []
+            reward = 0.0
 
             for time in range(TIME_LIMIT):
-                # Get predicted action to advance the simulation
-                predicted_action = self._get_predicted_action(state)
+                if time == 0:
+                    # Get stats for initial state
+                    bot_init_position = self.sim.get_postion(self.sim.paws_bot)
+                    state, waypoint_dist = self.sim.get_state(bot_init_position, time)
+                else:
                 
-                next_state, reward, done = self.sim.step(
-                    state,                    
-                    predicted_action,
-                    time
-                )
-                
-                cumu_reward.append(reward)
+                    # Get predicted action to advance the simulation
+                    predicted_action = self._get_predicted_action(state)
+                    
+                    next_state, reward, done, waypoint_dist = self.sim.step(
+                        state,                    
+                        predicted_action,
+                        time,
+                        waypoint_dist
+                    )
+                    
+                    if len(next_state) == 0:
+                        print("AN ERROR OCURRED")
+                        break
 
-                if len(next_state) > 0:
+                    # Stat tracking
+                    cumu_reward.append(reward)
+                    
+                    # Reduce chance of exploration
+                    self._decay_epsilon()
+                    
                     # Save current state in replay memory
                     self._memorize(
                         state, 
@@ -257,40 +281,28 @@ class DQN:
                         done
                     )
 
-                # Determine when to update target net
-                update_target += 1
-                if update_target > TARGET_UPDATE_COUNT:
-                    print("Updating target weights")
-                    self._update_target_weights()
-                    update_target = 0
+                    # Determine when to update target net
+                    update_target += 1
+                    if update_target > TARGET_UPDATE_COUNT:
+                        print("Updating target weights")
+                        self._update_target_weights()
+                        update_target = 0
 
-                # Stat Tracking
-                dist = self.sim.get_length([next_state[4], next_state[5]])
-                print(f"TIME: {time}, REAWRD: {round(reward,4)}, DISTANCE FROM GOAL: {round(dist, 4)}")
-                dist_plot.add_point(time, dist)
-
-                if done:
-                    # Update target net to training net weights
-                    final_time = time
-                    if len(next_state) == 0:
-                        print("AN ERROR OCURRED")
-                    else:
+                    if done:
+                        final_time = time
                         print(f"REACHED GOAL! - EPISODE: {e}, TIME: {time}")
-                    break
+                        break
 
-                batch_error_rms = self._replay()
-                err_plot.add_point(time, batch_error_rms)
-                
-                # Reduce chance of exploration
-                self._decay_epsilon()
+                    # Train NN
+                    batch_error_rms = self._replay()
+                    err_plot.add_point(time, batch_error_rms)
 
-                # Update state to next state
-                state = next_state 
-
+                    # Update state to next state
+                    state = next_state 
                 
-                
-                # if time % 10 == 0:
-                    # print(f"TIME: {time}, STEP_ERROR: {batch_error_rms}, DISTANCE FROM GOAL: {dist}")
+                # Stat Tracking
+                print(f"TIME: {time}, REWARD: {round(reward,4)}, DISTANCE FROM GOAL: {round(waypoint_dist, 4)}")
+                dist_plot.add_point(time, waypoint_dist)
 
             # Stat Tracking
             steps_plot.add_point(e, final_time)
@@ -301,8 +313,11 @@ class DQN:
             dist_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_dist_{e}_{now_str}"))
 
             if e % 10 == 0:
-                # Save intermittent networks
+                # Save intermittent network and plots for partial training
+                print(f"Saving Network for episode {e}")
                 self._save_network(self.training_net, e)
+                steps_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_steps_{e}_{now_str}"))
+                reward_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_reward_{e}_{now_str}"))
 
         # Save plots at end of training
         steps_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"plot_steps_{e}_{now_str}"))
