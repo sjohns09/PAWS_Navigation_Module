@@ -385,19 +385,18 @@ class Simulation:
         elif not is_safe:
             reward = NOT_SAFE_REWARD # obstacle negative reward
         else:
-            # # Positive reward for moving towards the objective
-            # # Negative for moving away
-            # r_distance = old_waypoint_dist - waypoint_dist
+            # Positive reward for moving towards the objective
+            # Negative for moving away
+            r_distance = old_waypoint_dist - waypoint_dist
             
-            # # Higher reward for being near the objective
-            # r_close = (self.optimal_distance-waypoint_dist)*REWARD_FREE_SPACE
+            # Higher reward for being near the objective
+            r_close = (self.optimal_distance-waypoint_dist)*REWARD_FREE_SPACE
             
-            # # Reward decays the longer time has passed
-            # r_time = (time/TIME_LIMIT) * REWARD_TIME_DECAY
+            # Reward decays the longer time has passed
+            r_time = (time/TIME_LIMIT) * REWARD_TIME_DECAY
 
-            # # Total reward
-            # reward = REWARD_DISTANCE_WEIGHT*r_distance + REWARD_CLOSE_WEIGHT*r_close + r_time
-            reward = (REWARD_TIME_DECAY*time)/TIME_LIMIT
+            # Total reward
+            reward = REWARD_DISTANCE_WEIGHT*r_distance + REWARD_CLOSE_WEIGHT*r_close + r_time
         return reward
 
             
