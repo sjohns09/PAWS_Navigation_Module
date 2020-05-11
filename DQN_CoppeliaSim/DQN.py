@@ -170,7 +170,7 @@ class DQN:
 
         return avg_error_rms   
 
-    def test(self, now_str):
+    def test(self, now_str, episode):
         self.sim.initialize()
         final_time = TIME_LIMIT
         success = False
@@ -210,7 +210,7 @@ class DQN:
             dist_plot.add_point(time, waypoint_dist)
         
         # Save plot at end of run
-        dist_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"TEST_plot_dist_{now_str}"))
+        dist_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"TEST_plot_dist_{now_str}_{episode}"))
 
         return success
 

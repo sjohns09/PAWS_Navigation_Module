@@ -13,7 +13,7 @@ from PAWS_Bot_Navigation.DQN_Custom_NN.Config import EPISODES, SIM_PORT, TIME_LI
 
 class DQN:
 
-    def __init__(self, state_size: int, action_size: int, train_mode: bool):
+    def __init__(self, state_size: int, action_size: int, train_mode: bool, model_path: str = ""):
         
         self.sim = Simulation()
         is_connected = self.sim.connect(SIM_PORT)
@@ -41,6 +41,8 @@ class DQN:
             self.epsilon_decay = 0.995
             self.epsilon_min = 0.01
             self.batch_size = 10
+        else:
+            self.load_network(model_path)
         
 
     def _get_predicted_action(self, state: list):
@@ -114,7 +116,7 @@ class DQN:
     def load_network(self, network_filepath: str) -> Network:
         self.training_net = pickle.load(open(network_filepath, "rb"))
 
-    def get_action(self, state: list):
+    def _get_action(self, state: list):
         # Returns action to take based on max Q value returned 
         # from prediction net
         self.training_net.feed_forward(state)
@@ -122,7 +124,7 @@ class DQN:
         action_index = output.index(max(output))
         return Actions(action_index)
     
-    def test(self, now_str):
+    def test(self, now_str, episode):
         self.sim.initialize()
         final_time = TIME_LIMIT
         success = False
@@ -162,7 +164,7 @@ class DQN:
             dist_plot.add_point(time, waypoint_dist)
         
         # Save plot at end of run
-        dist_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"TEST_plot_dist_{now_str}"))
+        dist_plot.plot(os.path.join(self.this_folder, f"{PLOT_SAVE_FOLDER}", f"TEST_plot_dist_{now_str}_{episode}"))
 
         return success
 

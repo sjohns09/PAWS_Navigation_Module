@@ -5,11 +5,11 @@ PLOT_SAVE_FOLDER = 'saved_data'
 NETWORK_SAVE_FOLDER = 'saved_networks'
 
 # Test Settings
-NUM_TEST_RUNS = 10
+NUM_TEST_RUNS = 5
 
 # Robot Settings
-MAX_MOTOR_SPEED = 10
-MAX_TURN_SPEED = 3
+MAX_MOTOR_SPEED = 40
+MAX_TURN_SPEED = 5
 MIN_MOTOR_SPEED = 0
 COLLISION_DIST = 0.10 # meters
 STEP_DISTANCE = 0.50 # meters per move
@@ -29,7 +29,7 @@ REWARD_TIME_DECAY = -0.5 # Max penalty for taking too long
 
 # Training Settings
 EPISODES = 500
-TIME_LIMIT = 100
+TIME_LIMIT = 50
 MEMORY_CAPACITY = 1000
 BATCH_SIZE = 35
 TARGET_UPDATE_COUNT = 25
