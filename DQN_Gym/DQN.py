@@ -4,6 +4,7 @@ import os
 import numpy as np
 import gym
 import gym_maze
+import time as t
 from datetime import datetime
 from copy import deepcopy
 from keras.models import Sequential
@@ -179,7 +180,8 @@ class DQN:
             # Get predicted action to advance the simulation
             predicted_action = self._get_predicted_action(state)
             next_obs, reward, done, info = self.env.step(predicted_action)
-            
+            self.env.render()
+
             # Update state to next state
             next_state = self._get_state(next_obs)
             state = next_state
