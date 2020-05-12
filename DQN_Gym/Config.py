@@ -1,6 +1,4 @@
 # Simulation Settings
-PAWS_BOT_MODEL_PATH = "D:\Sammie\Documents\Grad School\Spring 2020 - RobotLearning\Project\PAWS_Bot_Navigation\CoppeliaSim\paws_bot_model.ttm"
-SIM_PORT = 19999
 PLOT_SAVE_FOLDER = 'saved_data'
 NETWORK_SAVE_FOLDER = 'saved_networks'
 GYM_ENV = "maze-random-5x5-v0"

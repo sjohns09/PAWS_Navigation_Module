@@ -13,7 +13,6 @@ from keras.optimizers import Adam
 from PAWS_Bot_Navigation.Utilities.Plot import Plot
 from PAWS_Bot_Navigation.DQN_Gym.Config import (
     EPISODES, 
-    SIM_PORT, 
     TIME_LIMIT, 
     ALPHA,
     MEMORY_CAPACITY,
@@ -101,6 +100,7 @@ class DQN:
                 # Get predicted action to advance the simulation
                 predicted_action = self._get_predicted_action(state)
                 next_obs, reward_sim, done, info = self.env.step(predicted_action)
+                self.env.render()
                 next_state = self._get_state(next_obs)
 
                 reward = self._get_reward(state, next_state, done, time)
@@ -170,9 +170,6 @@ class DQN:
         obs = self.env.reset()
         final_time = TIME_LIMIT
 
-        # recording_folder = PLOT_SAVE_FOLDER
-        # self.env.monitor().start(recording_folder, force=True)
-
         for time in range(TIME_LIMIT):
             if time == 0:
                 state = self._get_state(obs)
@@ -194,8 +191,6 @@ class DQN:
                 final_time = time
                 print(f"REACHED GOAL! TIME: {time}")
                 break
-        
-        # self.env.monitor.close()
 
         return done, final_time
 

@@ -64,15 +64,12 @@ def main(train_mode: bool, run_mode: str, model_path: str = ""):
 
 
 if __name__ == "__main__":
-    #run_mode = input("Which Mode? CoppeliaSim[1] Gym[2] CustomNN[3] :")
-    run_mode = '2'
-    #input_mode = input("Training Mode? [Y or N] :")
-    input_mode = 'N'
+    run_mode = input("Which Mode? CoppeliaSim[1] Gym[2] CustomNN[3] :")
+    input_mode = input("Training Mode? [Y or N] :")
     if input_mode.upper() == 'Y':
         train_mode = True
         main(train_mode, run_mode)
     else:
         train_mode = False
-        #input_file = input("Network File To Load :")
-        input_file = "D:\Sammie\Documents\Grad School\Spring 2020 - RobotLearning\Project\PAWS_Bot_Navigation\DQN_Gym\saved_networks\\net_20200511_173028_e1000.h5"
+        input_file = input("Network File To Load :")
         main(train_mode, run_mode, input_file)
